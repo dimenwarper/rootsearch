@@ -35,11 +35,10 @@ def fetch_nsf_grants(field: str, max_results: int = 20, *, delay: float = 1.0) -
                 break
             try:
                 r = client.get(NSF_BASE, params={
-                    "agency": "NSF",
                     "fundProgramName": code,
-                    "dateStart": "01/01/2020",
+                    "dateStart": "01/01/2022",
                     "dateEnd": "12/31/2024",
-                    "fields": "id,title,abstractText,agency,fundsObligatedAmt,date",
+                    "printFields": "id,title,abstractText,agency,fundsObligatedAmt,date",
                     "offset": 1,
                     "rpp": min(20, max_results - len(grants)),
                 }, timeout=20)
