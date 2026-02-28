@@ -19,7 +19,7 @@ from rootsearch.models import Paper
 console = Console()
 
 EUTILS_BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
-PMC_OA_BASE = "https://www.ncbi.nlm.nih.gov/pmc/oai/oai.cgi"
+PMC_OA_BASE = "https://pmc.ncbi.nlm.nih.gov/api/oai/v1/mh/"
 
 # High-signal section types in PMC XML
 PMC_SIGNAL_SECTIONS = {
@@ -165,7 +165,7 @@ def fetch_pmc_fulltext_sections(pmc_id: str) -> dict[str, str]:
         "metadataPrefix": "pmc",
     }
 
-    with httpx.Client() as client:
+    with httpx.Client(follow_redirects=True) as client:
         try:
             r = client.get(PMC_OA_BASE, params=params, timeout=30)
             r.raise_for_status()
@@ -177,29 +177,41 @@ def fetch_pmc_fulltext_sections(pmc_id: str) -> dict[str, str]:
 
 
 def _parse_pmc_xml_sections(xml_text: str) -> dict[str, str]:
-    """Extract high-signal section text from PMC OAI-PMH XML."""
+    """Extract high-signal section text from PMC OAI-PMH JATS XML.
+
+    Uses localname-based iteration to be namespace-agnostic (PMC switched
+    to JATS format at https://jats.nlm.nih.gov/ns/archiving/1.4/).
+    """
     try:
         root = etree.fromstring(xml_text.encode())
     except Exception as e:
         console.print(f"[red]PMC XML parse error: {e}[/]")
         return {}
 
+    def localname(el) -> str:
+        return etree.QName(el.tag).localname
+
     sections: dict[str, str] = {}
-    # PMC XML uses <sec sec-type="..."> or <sec><title>...</title> patterns
-    for sec in root.iter("sec"):
+    # Iterate all elements, pick <sec> by localname
+    for sec in root.iter():
+        if localname(sec) != "sec":
+            continue
+
         sec_type = (sec.get("sec-type") or "").lower()
-        title_el = sec.find("title")
-        title = ("".join(title_el.itertext())).strip().lower() if title_el is not None else sec_type
+        title_el = next((c for c in sec if localname(c) == "title"), None)
+        title = ("".join(title_el.itertext())).strip() if title_el is not None else ""
+        title_lower = title.lower()
 
         is_signal = (
-            any(kw in title for kw in PMC_SIGNAL_SECTIONS) or
+            any(kw in title_lower for kw in PMC_SIGNAL_SECTIONS) or
             any(kw in sec_type for kw in PMC_SIGNAL_SECTIONS)
         )
         if not is_signal:
             continue
 
-        # Extract all text from this section
-        text = " ".join("".join(el.itertext()).strip() for el in sec.iter("p"))
+        # Extract all <p> text, namespace-agnostic
+        paras = [el for el in sec.iter() if localname(el) == "p"]
+        text = " ".join("".join(p.itertext()).strip() for p in paras)
         text = " ".join(text.split())  # normalize whitespace
         if len(text) > 100:
             sections[title or sec_type] = text

@@ -95,11 +95,15 @@ def graph_stats(G: nx.DiGraph) -> dict:
     }
 
 
-def save_jsonl(items: list[Node | Edge], path: Path) -> None:
+def save_jsonl(items: list, path: Path) -> None:
+    """Save a list of Pydantic models or plain dicts to JSONL."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:
         for item in items:
-            f.write(item.model_dump_json() + "\n")
+            if hasattr(item, "model_dump_json"):
+                f.write(item.model_dump_json() + "\n")
+            else:
+                f.write(json.dumps(item) + "\n")
     console.print(f"[dim]Saved {len(items)} records → {path}[/]")
 
 

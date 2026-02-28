@@ -143,7 +143,7 @@ def extract_latex_sections(arxiv_id: str) -> dict[str, str]:
 
     # Try to extract .tex from tarball
     tex_source = ""
-    if b"tar" in content_type.lower() or content[:2] == b"\x1f\x8b" or content[:5] == b"PK\x03\x04":
+    if "tar" in content_type.lower() or content[:2] == b"\x1f\x8b" or content[:5] == b"PK\x03\x04":
         try:
             with tarfile.open(fileobj=io.BytesIO(content), mode="r:*") as tar:
                 # Find the main .tex file (largest one, or the one with \documentclass)
