@@ -94,6 +94,80 @@ For the top-ranked root problems, the system assesses suitability for parallel m
 
 ---
 
+## Implementation Status
+
+> Phase 0 is actively being built. This section tracks what's done.
+
+### ✅ Completed
+
+**Library (`src/rootsearch/`)**
+
+| Module | What it does | Status |
+|--------|-------------|--------|
+| `models.py` | Pydantic models: `Node`, `Edge`, `Paper`, `Grant`, `SourceRef` | ✅ |
+| `ingest/openalex.py` | Cursor-paginated review + top-cited fetch via OpenAlex API | ✅ |
+| `ingest/arxiv.py` | arXiv Atom API + per-paper LaTeX tarball downloader + regex section extractor | ✅ |
+| `ingest/pubmed.py` | PubMed E-utilities abstract search + PMC OA JATS full-text XML parser | ✅ |
+| `ingest/grants.py` | NSF Awards API + NIH RePORTER v2 grant abstract fetcher | ✅ |
+| `extract/nodes.py` | Claude tool-use Pass 1 — structured node extraction from paper text | ✅ |
+| `extract/edges.py` | Claude tool-use Pass 2 — dependency edge extraction + cross-field stub nodes | ✅ |
+| `graph/dedup.py` | `sentence-transformers` embedding dedup + optional LLM disambiguation | ✅ |
+| `graph/builder.py` | NetworkX DiGraph builder + `graph_stats()` + JSONL I/O | ✅ |
+| `analysis/scoring.py` | Cascade score, cross-field leverage, bottleneck centrality, composite Leverage Index | ✅ |
+
+**Prototype scripts (`proto/`)**
+
+| Script | Purpose | Result |
+|--------|---------|--------|
+| `01_sample_openalex.py` | Validate topic IDs, fetch 40 papers/field | ✅ Works — 40 papers/field, 32–75% abstract coverage |
+| `02_sample_arxiv.py` | Fetch arXiv papers + test LaTeX section extraction | ✅ Works — signal sections found in recent papers; old tarballs (pre-2010) fail gracefully |
+| `03_sample_pubmed.py` | PubMed abstracts + PMC OA full-text XML | ✅ Works — 20/20 abstracts, 3/3 PMC full-text sections, **50% dependency-language hit rate** |
+| `04_sample_grants.py` | NSF Awards + NIH RePORTER abstracts | ✅ Works — 80 grants, 100% abstracts, **55% "challenge" / 30% "to enable"** signal language |
+| `05_llm_extract_sample.py` | Claude node + edge extraction on 3 sample papers | ⏳ Ready — needs `ANTHROPIC_API_KEY` |
+| `06_mini_pipeline.py` | Full ingest → extract → dedup → graph → leaderboard | ✅ Ingest layer verified (68 papers, 0 errors); LLM layer ready — needs `ANTHROPIC_API_KEY` |
+
+### 🐛 Bugs Found and Fixed During Proto Runs
+
+| Bug | Fix | Commit |
+|-----|-----|--------|
+| `b"tar" in content_type` — bytes vs str comparison in arXiv tarball detection | Changed to `"tar"` (str literal) | `2dd9938` |
+| PMC OA endpoint moved to new URL | Updated `PMC_OA_BASE` to `pmc.ncbi.nlm.nih.gov/api/oai/v1/mh/` | `2dd9938` |
+| PMC XML parser used `root.iter("sec")` which skips JATS namespace | Rewrote with `etree.QName().localname` iteration | `2dd9938` |
+| `save_jsonl()` called `.model_dump_json()` on plain dicts | Accept both Pydantic models and dicts | `2dd9938` |
+| NSF API uses `printFields`, not `fields`, for column selection | Renamed param | `c72d7c8` |
+
+### ⏳ Next Steps
+
+1. **Set `ANTHROPIC_API_KEY`** in `.env` (see `.env.example`) to unlock LLM extraction
+2. Run `proto/05_llm_extract_sample.py` — validate node/edge quality on 6 papers
+3. Run `proto/06_mini_pipeline.py` — full end-to-end with leaderboard
+4. Tune OpenAlex topic IDs (current IDs return too-broad results; use `search_topics()` output to find better ones)
+5. Expand arXiv LaTeX extraction to newer papers (recent arXiv IDs work; pre-2010 tarballs use legacy formats)
+
+### Running the Prototypes
+
+```bash
+# Install dependencies
+uv sync
+
+# Copy and fill in env vars
+cp .env.example .env
+# edit .env — at minimum set ANTHROPIC_API_KEY
+
+# Run protos in order
+uv run python proto/01_sample_openalex.py   # OpenAlex API probe
+uv run python proto/02_sample_arxiv.py      # arXiv + LaTeX extraction
+uv run python proto/03_sample_pubmed.py     # PubMed + PMC full-text
+uv run python proto/04_sample_grants.py     # NSF + NIH grants
+uv run python proto/05_llm_extract_sample.py  # LLM node+edge extraction
+uv run python proto/06_mini_pipeline.py        # Full mini pipeline + leaderboard
+
+# Proto 06 can also run without LLM calls (ingest layer only):
+uv run python proto/06_mini_pipeline.py --no-llm
+```
+
+---
+
 ## Validation
 
 The primary validation approach is **retrodiction**: build the graph as it would have existed in 2010-2015, and ask whether the system would have ranked the prerequisites for AlphaFold, CRISPR, or mRNA vaccines as high-leverage. If yes, the system has demonstrated predictive signal before any new predictions are made.
